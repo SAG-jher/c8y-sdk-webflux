@@ -18,12 +18,15 @@ import java.nio.file.Files.newInputStream
 import java.nio.file.Paths
 import java.util.concurrent.ThreadLocalRandom
 import io.c8y.scripts.support.log
+import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.core.io.buffer.DefaultDataBufferFactory
+import java.nio.file.Path
 
 fun main() {
 
 
     val platform = Platform["local"]
-
     platform.rest().tenant().ensureTenant("jaro-0")
         .map {
             platform.forTenant(it)
@@ -101,28 +104,27 @@ fun main() {
                     log.info("Creating app as it's not found with name: $name")
                     this.rest().application()
                         .create(
-                            Mono.just(
                                 Application(
                                     name = name,
                                     key = "${name}-key",
                                     type = ApplicationType.MICROSERVICE
                                 )
-                            )
                         )
                 }.flatMap { app ->
                     log.info("Assign binary to  ${app.id}")
                     if (app.activeVersionId == null) {
                         log.info("Uploading binary ${app.id}")
-                        this.rest().application().upload(app.id, Mono.defer {
+                        this.rest().application().upload(app.id!!, Mono.defer<Path> {
                             Files.newDirectoryStream(
                                 Paths.get(System.getenv("CUMULOCITY_HOME"), "/agents/echo/target/"),
                                 "echo-agent-server-*.zip"
-                            )
-                                .use {
-                                    Mono.just(newInputStream(it.first()))
-                                }
+                            ).use{
+                                Mono.just(it.first())
+                            }
 
-                        })
+                        }.flatMapMany {
+                            DataBufferUtils.read(it,DefaultDataBufferFactory.sharedInstance,1024*1024)
+                         })
                             .map { app }
                             .switchIfEmpty(Mono.just(app))
                     } else {
@@ -148,7 +150,6 @@ fun main() {
         numberOfMeasurements: Int = 100
     ): Mono<MeasurementCollection> {
         return platform.rest().measurement().createMany(
-            Mono.just(
                 MeasurementCollection(
                     measurements = (1..numberOfMeasurements).map { value ->
                         Measurement(source = device.toReference(), type = "measurement").set(
@@ -157,19 +158,16 @@ fun main() {
                         )
                     }
                 )
-            )
         )
     }
 
     private fun createMeasurement(platform: PlatformApi, device: ManagedObject): Mono<Measurement> {
 
         return platform.rest().measurement().create(
-            Mono.just(
                 Measurement(source = device.toReference(), type = "measurement").set(
                     "c8y_Temperature",
                     mapOf("T" to mapOf("value" to 10, "unit" to "C"))
                 )
-            )
         )
     }
 

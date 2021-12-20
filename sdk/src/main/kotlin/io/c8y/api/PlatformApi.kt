@@ -1,13 +1,14 @@
 package io.c8y.api
 
-import com.fasterxml.jackson.annotation.JsonFormat
+import com.google.common.base.Stopwatch
 import com.google.common.io.BaseEncoding
 import com.hivemq.client.mqtt.MqttClient
 import com.hivemq.client.mqtt.mqtt3.Mqtt3ClientBuilder
 import com.hivemq.client.mqtt.mqtt3.reactor.Mqtt3ReactorClient
 import io.c8y.api.management.tenant.Tenant
 import io.c8y.api.management.tenant.domainForTenant
-import io.c8y.api.support.*
+import io.c8y.api.support.Dynamic
+import io.c8y.api.support.loggerFor
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import org.springframework.http.HttpHeaders
@@ -21,13 +22,9 @@ import org.springframework.web.reactive.socket.WebSocketHandler
 import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient
 import org.springframework.web.util.DefaultUriBuilderFactory
 import org.springframework.web.util.UriBuilder
-import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.netty.http.client.HttpClient
 import java.net.URI
-import java.time.OffsetDateTime
-import java.time.ZonedDateTime
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 
@@ -83,25 +80,33 @@ private val restClient = WebClient.builder()
             .build()
     )
     .filter { req, next ->
-
+        val stopwatch = Stopwatch.createStarted()
         next.exchange(req)
             .doOnEach { signal ->
+
                 if (signal.isOnError) {
-                    log.info("Request failed {} {}",  req.method(), req.url(), signal.throwable)
+                    stopwatch.stop()
+                    log.info("Request failed {} {}, took: {}", req.method(), req.url(), signal.throwable, stopwatch)
                 } else if (signal.isOnNext) {
-                    log.info("Request {} {} => {}", req.method(), req.url(), signal.get().statusCode())
+                    stopwatch.stop()
+                    log.info(
+                        "Request {} {} => {}, took: {}",
+                        req.method(),
+                        req.url(),
+                        signal.get()?.statusCode(),
+                        stopwatch
+                    )
                 }
             }
     }
-
     .clientConnector(httpConnector)
     .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
 
     .build();
 
 
-
 class PlatformApi(
+    val config: Config,
     val credentials: Credentials,
     private val baseUrl: String,
     private val tenantDomainSupport: Boolean = true
@@ -116,21 +121,38 @@ class PlatformApi(
 
 
     fun withBaseUrl(baseUrl: String): PlatformApi {
-        return PlatformApi(credentials = credentials, baseUrl = baseUrl, tenantDomainSupport = tenantDomainSupport)
+        return PlatformApi(
+            config = config,
+            credentials = credentials,
+            baseUrl = baseUrl,
+            tenantDomainSupport = tenantDomainSupport
+        )
     }
 
-    fun forTenant(tenant: Tenant, baseUrl: String = this.baseUrl): PlatformApi {
+    fun forTenant(
+        tenant: Tenant,
+        baseUrl: String = this.baseUrl,
+        useHttps: Boolean = config.getOrDefault("useHttps", false)
+    ): PlatformApi {
         val currentBase = url.build()
         return PlatformApi(
+            config = config,
             baseUrl = DefaultUriBuilderFactory().uriString(baseUrl).host(
                 tenantDomain(
                     baseUrl,
                     tenant.id!!
                 )
-            ).port(currentBase.port).scheme(currentBase.scheme).build().toString(),
+            ).apply {
+                if (useHttps) {
+                    this.port(443).scheme("https")
+                } else {
+
+                    this.port(currentBase.port).scheme(currentBase.scheme)
+                }
+            }.build().toString(),
             credentials = BasicCredentials(
                 username = tenant.id + "/admin",
-                password = "q1w2e3r4"
+                password = "q1w2e3r4Q!W@E#R$"
             )
         )
     }
@@ -143,38 +165,45 @@ class PlatformApi(
     fun mqtt3(
         clientId: String,
         credentials: Credentials = this.credentials,
+        port: Int = 8883,
         configure: (Mqtt3ClientBuilder) -> Unit = {}
     ): Mqtt3ReactorClient {
 
 
         return Mqtt3ReactorClient.from(
             MqttClient.builder()
-            .useMqttVersion3()
-            .serverHost(
-                DefaultUriBuilderFactory().uriString(baseUrl)
-                    .scheme("tcp")
-                    .build().host
-            )
-            .serverPort(18884)
-            .automaticReconnect()
-            .initialDelay(1, TimeUnit.SECONDS)
-            .maxDelay(10, TimeUnit.SECONDS)
-            .applyAutomaticReconnect()
-            .identifier(clientId)
-            .simpleAuth()
-            .let {
-                when (credentials) {
-                    is BasicCredentials -> {
-                        it.username(credentials.username)
-                            .password(credentials.password.toByteArray())
+                .useMqttVersion3()
+                .transportConfig()
+                .socketConnectTimeout(120, TimeUnit.SECONDS)
+                .serverPort(port)
+                .serverHost(
+                    DefaultUriBuilderFactory().uriString(baseUrl)
+                        .scheme("tcp")
+                        .build().host
+                )
+                .sslConfig()
+                .handshakeTimeout(60, TimeUnit.SECONDS)
+                .applySslConfig()
+                .applyTransportConfig()
+                .automaticReconnect()
+                .initialDelay(1, TimeUnit.SECONDS)
+                .maxDelay(10, TimeUnit.SECONDS)
+                .applyAutomaticReconnect()
+                .identifier(clientId)
+                .simpleAuth()
+                .let {
+                    when (credentials) {
+                        is BasicCredentials -> {
+                            it.username(credentials.username)
+                                .password(credentials.password.toByteArray())
 
+                        }
+                        else -> throw IllegalStateException("unsupported credentials " + credentials)
                     }
-                    else -> throw IllegalStateException("unsupported credentials " + credentials)
                 }
-            }
-            .applySimpleAuth()
-            .apply(configure)
-            .build())
+                .applySimpleAuth()
+                .apply(configure)
+                .build())
 
 
     }
@@ -247,11 +276,9 @@ class PlatformApi(
     }
 
     fun withCredentials(credentials: Credentials): PlatformApi {
-        return PlatformApi(credentials, baseUrl, tenantDomainSupport)
+        return PlatformApi(config = config, credentials, baseUrl, tenantDomainSupport)
     }
 }
-
-
 
 
 data class Identity(

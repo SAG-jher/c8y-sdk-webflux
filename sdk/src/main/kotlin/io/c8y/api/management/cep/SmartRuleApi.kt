@@ -2,6 +2,7 @@ package io.c8y.api.management.cep
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import io.c8y.api.support.Dynamic
+import io.c8y.api.support.handleRestError
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType.APPLICATION_JSON
 import org.springframework.web.reactive.function.client.WebClient
@@ -11,7 +12,6 @@ import reactor.core.publisher.Mono
 
 
 class SmartRuleApi(
-    private val baseUrl: UriBuilderFactory,
     private val client: WebClient
 ) {
     fun list(vararg params: Pair<String, Any>): Flux<SmartRule> {
@@ -21,20 +21,7 @@ class SmartRuleApi(
             }
             .accept(APPLICATION_JSON)
             .retrieve()
-            .onStatus(HttpStatus::is4xxClientError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
-            .onStatus(HttpStatus::is5xxServerError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
+            .handleRestError()
             .bodyToMono(SmartRuleCollection::class.java)
             .flatMapIterable {
                 it.rules
@@ -50,20 +37,7 @@ class SmartRuleApi(
             .accept(APPLICATION_JSON)
             .body(Mono.just(smartrule), SmartRule::class.java)
             .retrieve()
-            .onStatus(HttpStatus::is4xxClientError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
-            .onStatus(HttpStatus::is5xxServerError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
+            .handleRestError()
             .bodyToMono(SmartRule::class.java)
     }
 
@@ -73,20 +47,7 @@ class SmartRuleApi(
                 it.path("/service/smartrule/smartrules/{id}").build(smartRuleId)
             }
             .retrieve()
-            .onStatus(HttpStatus::is4xxClientError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
-            .onStatus(HttpStatus::is5xxServerError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
+            .handleRestError()
             .bodyToMono(Void::class.java)
     }
 }

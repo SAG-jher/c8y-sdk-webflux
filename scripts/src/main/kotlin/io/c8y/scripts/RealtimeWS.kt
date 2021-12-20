@@ -1,60 +1,92 @@
 package io.c8y.scripts
 import io.c8y.scripts.support.log
 import io.c8y.api.*
+import io.c8y.api.inventory.alarm.Alarm
+import io.c8y.api.inventory.alarm.Severity
+import io.c8y.api.inventory.alarm.Status
 import io.c8y.api.inventory.ensureDevice
 import io.c8y.api.management.realtime.RealtimeWebsocketFlux
 import io.c8y.api.management.realtime.channel
 import io.c8y.api.management.realtime.data
 import io.c8y.api.management.tenant.ensureTenant
 import io.c8y.config.Platform
+import io.reactivex.subjects.Subject
 import reactor.core.publisher.Flux
+import java.time.Duration
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 fun main() {
 
 
-    val current = Platform["local"]
-    val tenant = current.rest().tenant().ensureTenant("jaro-0").block()
-    val c8y = current.forTenant(tenant)
+    val management = Platform["staging-2"]
+    val current = management
+        .rest().tenant().ensureTenant("jaro-0")
+        .map {
+            management.forTenant(it)
+        }.block()
     val received = mutableMapOf<String, MutableSet<String>>()
 
-    val realtime = RealtimeWebsocketFlux(c8y, "cep/realtime")
+    val realtime = RealtimeWebsocketFlux(current, "cep/realtime")
     realtime.handshake().block()
-    val numberOfMessages = AtomicLong()
-    Flux.range(0, 200)
-        .flatMap {
-            c8y.rest().inventory()
-                .ensureDevice(type = "c8y_realtime_test$it")
-                .flatMapMany { device ->
-                    realtime.subscirbe("/measurements/${device.id!!}")
-                }
-        }
-        .subscribe {
 
-            val measuremnt = it.data["data"] as Map<String, Any>
-            val id = measuremnt["id"] as String
-            synchronized(received) {
-                val measurements = received.computeIfAbsent(it.channel, { mutableSetOf<String>() })
-                if (id in measurements) {
-                    log.error("Meassage already received {} for {}", id, it.channel)
-                } else {
-                    measurements.add(id)
+
+    Flux.range(0, 1)
+        .flatMap {
+            current.rest().inventory()
+                .ensureDevice(type = "c8y_realtime_test$it")
+                .flatMap {
+                    current.rest().inventory().update(it.id!!, "c8y_RequiredAvailability" to mapOf("responseInterval" to TimeUnit.MINUTES.toSeconds(30)))
                 }
-                val receivedMessages = numberOfMessages.incrementAndGet()
-                if ((receivedMessages % 1000) == 0L) {
-                    log.info("Message processed {}", receivedMessages)
-                    if (receivedMessages > 100_000L) {
-                        log.info("{}", received.mapValues { it.value.size })
+                .map {
+                    realtime.subscirbe("/alarms/${it.id}")
+                        .log()
+                        .subscribe()
+                    it
+                }
+
+        }
+
+        .concatMap { device->
+            Flux.range(0,100)
+                .delayElements(Duration.ofSeconds(30))
+                .concatMap {
+                    current.rest().alarm().list("status" to Status.ACTIVE)
+                        .concatMap {
+                            log.info("Active alarm {}",it)
+                            current.rest().alarm().update(it.id!!, "status" to Status.CLEARED.name)
+                        }.subscribe()
+                    current.rest().alarm().create(
+                        Alarm(
+                            source = device.toReference(),
+                            text = "My test alarm",
+                            severity = Severity.MAJOR,
+                            status = Status.ACTIVE,
+                            type = "c8y_test_alarm"
+                        )
+                    ).doOnNext {
+                        log.info("Alarm created {}",it)
                     }
                 }
 
-            }
-        }
+        }.blockLast()
+//    Flux.range(0, 1)
+//        .flatMap {
+//            current.rest().inventory()
+//                .ensureDevice(type = "c8y_realtime_test$it")
+//
+//        }
+//        .concatMap {
+//            val alarm = it.data["data"] as Map<String, Any>
+//            val id = alarm["id"] as String
+//            current.rest().alarm().update(id, "status" to Status.CLEARED)
+//        }.doOnNext{
+//            log.info("Alarm {}",it)
+//        }
 
 
 
 
-    Thread.sleep(100000000)
 
 
 }

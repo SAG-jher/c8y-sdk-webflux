@@ -31,11 +31,11 @@ data class Event(
 ) : Dynamic<Event>()
 
 class EventApi(private val client: WebClient) {
-    fun create(mo: Mono<Event>): Mono<Event> {
+    fun create(mo: Event): Mono<Event> {
         return client.post()
             .uri { uri -> uri.path("event/events").build() }
             .contentType(MediaType.APPLICATION_JSON)
-            .body(mo, Event::class.java)
+            .body(Mono.just(mo), Event::class.java)
             .accept(MediaType.APPLICATION_JSON)
             .retrieve()
             .bodyToMono(Event::class.java)

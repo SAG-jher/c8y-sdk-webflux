@@ -10,7 +10,7 @@ val Message.channel:String get() {
     return this["channel"] as String
 }
 val Message.data:Map<String,Any> get() {
-    return this["data"] as Map<String, Any>
+    return this["data"]!! as Map<String, Any>
 }
 
 typealias ChannelId = String

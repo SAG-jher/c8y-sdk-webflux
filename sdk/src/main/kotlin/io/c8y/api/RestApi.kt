@@ -5,9 +5,11 @@ import io.c8y.api.inventory.alarm.AlarmApi
 import io.c8y.api.inventory.devicecontrol.DeviceControlApi
 import io.c8y.api.inventory.event.EventApi
 import io.c8y.api.inventory.measurement.MeasurementApi
+import io.c8y.api.inventory.smartrest.SmartrestApi
 import io.c8y.api.management.application.ApplicationApi
 import io.c8y.api.management.cep.CepApi
 import io.c8y.api.management.cep.SmartRuleApi
+import io.c8y.api.management.tenant.OptionApi
 import io.c8y.api.management.tenant.TenantApi
 import io.c8y.api.management.tenant.UserApi
 import org.springframework.http.HttpStatus
@@ -56,13 +58,25 @@ class RestApi(
     }
 
     fun smartRules(): SmartRuleApi {
-        return SmartRuleApi(baseUrl, client)
+        return SmartRuleApi(client)
     }
 
     fun alarm(): AlarmApi {
-        return AlarmApi(baseUrl, client)
+        return AlarmApi(client)
     }
+
+    fun smartrest(path: String = "s/"): SmartrestApi {
+        return SmartrestApi(client, path)
+    }
+
 }
 
-class RestException(message: String, val status: HttpStatus) : RuntimeException(message)
+data class ErrorDetails(
+    val exceptionMessage: String,
+    val exceptionClass: String?,
+    val exceptionStackTrace: String?
+)
+
+data class RestError(val message: String, val info: String, val error: String, val details: ErrorDetails? = null)
+class RestException(val error: RestError, val status: HttpStatus) : RuntimeException(error.message)
 

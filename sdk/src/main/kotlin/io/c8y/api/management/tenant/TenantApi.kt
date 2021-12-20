@@ -21,7 +21,7 @@ data class Tenant(
     val company: String = id!!,
     val adminName: String = "admin",
     val adminEmail: String = "$adminName@cumulocity.com",
-    val adminPass: String = "q1w2e3r4",
+    val adminPass: String = "q1w2e3r4Q!W@E#R$",
     val sendPasswordResetEmail: Boolean = false,
     val storageLimitPerDevice: Long = 0
 )
@@ -51,7 +51,9 @@ class TenantApi(
     }
 
     fun get(id: String): Mono<Tenant> {
-        return client.get().uri { uri -> uri.path("tenant/tenants/{id}").build(id) }
+        return client.get()
+            .uri { uri -> uri.path("tenant/tenants/{id}").build(id) }
+            .accept(MediaType.APPLICATION_JSON)
             .retrieve()
             .bodyToMono(Tenant::class.java)
     }
@@ -59,6 +61,9 @@ class TenantApi(
 
     fun options(): OptionApi {
         return OptionApi(client.mutate().baseUrl(baseUrl.builder().path("/tenant/options").build().toString()).build())
+    }
+    fun systemOptions(): OptionApi {
+        return OptionApi(client.mutate().baseUrl(baseUrl.builder().path("/tenant/system/options").build().toString()).build())
     }
 
     fun subscribe(application: String): Mono<Void> {
@@ -163,6 +168,21 @@ class TenantApi(
 
     fun currentTenant(): CurrentTenantApi {
         return CurrentTenantApi(client)
+    }
+
+    fun update(id: String?,vararg update:Pair<String,Any?>): Mono<Tenant> {
+        return client.put()
+            .uri { uri -> uri.path("tenant/tenants/{id}").build(id) }
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                Mono.just(
+                    mapOf(*update)
+                ), Map::class.java
+            )
+            .accept(MediaType.APPLICATION_JSON)
+            .retrieve()
+            .handleRestError()
+            .bodyToMono(Tenant::class.java)
     }
 
 }

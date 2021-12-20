@@ -6,12 +6,16 @@ import io.c8y.api.management.application.ApplicationType
 import io.c8y.config.Platform
 import org.apache.commons.io.IOUtils
 import org.slf4j.LoggerFactory
+import org.springframework.core.io.buffer.DataBuffer
+import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.concurrent.Callable
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -23,6 +27,7 @@ fun main() {
 
     val applicationApi = rest.application()
 
+    val boundedElastic = Schedulers.boundedElastic()
     Flux.fromIterable(
         arrayListOf<String>(
             "mongo",
@@ -39,22 +44,20 @@ fun main() {
         .flatMap { image ->
 
             applicationApi.create(
-                Mono.just(
                     Application(
                         name = "test-" + System.currentTimeMillis(),
                         type = ApplicationType.MICROSERVICE,
                         key = "test-" + System.currentTimeMillis()
                     )
-                )
             ).map { it to image }
         }
-        .subscribeOn(Schedulers.elastic())
+        .subscribeOn(boundedElastic)
         .map {
-            it.first to downloadImage(it.second).block()
+            it.first to downloadImage(it.second)
         }
-        .subscribeOn(Schedulers.elastic())
+        .subscribeOn(boundedElastic)
         .flatMap { upload ->
-            applicationApi.upload(upload.first.id, Mono.just( upload.second))
+            applicationApi.upload(upload.first.id!!,  upload.second)
         }
 
         .collectList()
@@ -66,17 +69,17 @@ fun main() {
 
 private fun downloadImage(
     image: String
-): Mono<InputStream> {
+): Flux<DataBuffer> {
     val log = LoggerFactory.getLogger("downloadImage")
 
-    return Mono.fromCallable {
+    return DataBufferUtils.readInputStream(  {
         DefaultDockerClient.fromEnv().build().use { docker ->
             log.info("Pulling image {}", image)
             docker.pull(image)
             log.info("Saving image {}", image)
             val zipFile = Paths.get("${image}.zip")
             if(Files.exists(zipFile)){
-                return@fromCallable Files.newInputStream(zipFile)
+                return@readInputStream Files.newInputStream(zipFile)
             }
 
             docker.save(image).use { imageTar ->
@@ -134,11 +137,11 @@ private fun downloadImage(
                     out.closeEntry()
                 }
 
-                return@fromCallable Files.newInputStream(zipFile)
+                return@readInputStream Files.newInputStream(zipFile)
             }
 
         }
-    }
+    },DefaultDataBufferFactory.sharedInstance,1024)
 };
 
 

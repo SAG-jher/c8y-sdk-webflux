@@ -7,8 +7,8 @@ import org.springframework.web.util.UriBuilderFactory
 import reactor.core.publisher.Mono
 
 
-class CurrentApplicationApi(private val baseUrl: UriBuilderFactory,
-                            private val client: WebClient
+class CurrentApplicationApi(
+    private val client: WebClient
 ){
 
     fun get(): Mono<Application> {

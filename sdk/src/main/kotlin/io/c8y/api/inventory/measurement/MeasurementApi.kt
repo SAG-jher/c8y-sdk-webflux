@@ -1,7 +1,6 @@
 package io.c8y.api.inventory.measurement
 
 import com.fasterxml.jackson.annotation.JsonFormat
-import io.c8y.api.support.handleRestError
 import io.c8y.api.inventory.ManagedObject
 import io.c8y.api.support.*
 import org.springframework.http.MediaType
@@ -13,22 +12,22 @@ import java.time.ZonedDateTime
 
 class MeasurementApi(private val client: WebClient) {
     internal val log = loggerFor<MeasurementApi>()
-    fun create(mo: Mono<Measurement>): Mono<Measurement> {
+    fun create(mo: Measurement): Mono<Measurement> {
         return client.post()
             .uri { uri -> uri.path("measurement/measurements").build() }
             .contentType(MediaType.APPLICATION_JSON)
-            .body(mo, Measurement::class.java)
+            .body(Mono.just(mo), Measurement::class.java)
             .accept(MediaType.APPLICATION_JSON)
             .retrieve()
             .handleRestError()
             .bodyToMono(Measurement::class.java)
     }
 
-    fun createMany(mo: Mono<MeasurementCollection>): Mono<MeasurementCollection> {
+    fun createMany(mo: MeasurementCollection): Mono<MeasurementCollection> {
         return client.post()
             .uri { uri -> uri.path("measurement/measurements").build() }
             .contentType(MediaType.parseMediaType("application/vnd.com.nsn.cumulocity.measurementCollection+json"))
-            .body(mo, MeasurementCollection::class.java)
+            .body(Mono.just(mo), MeasurementCollection::class.java)
             .accept(MediaType.parseMediaType("application/vnd.com.nsn.cumulocity.measurementCollection+json"))
             .retrieve()
             .handleRestError()
@@ -41,6 +40,7 @@ class MeasurementApi(private val client: WebClient) {
 
     }
 }
+
 data class MeasurementCollection(val measurements: Iterable<Measurement>, override val statistics: Page? = null) :
     Pageable<Measurement> {
     override fun iterator(): Iterator<Measurement> {
@@ -56,6 +56,14 @@ data class Measurement(
     val type: String
 ) : Dynamic<Measurement>()
 
+object Measurements{
+    fun temperature(device: ManagedObject, value: Number): Measurement {
+        return Measurement(source = device.toReference(), type = "measurement").set(
+            "c8y_Temperature",
+            mapOf("T" to mapOf("value" to value, "unit" to "C"))
+        )
+    }
+}
 
 data class MeasurementValue(
     val value: Any,
@@ -69,15 +77,13 @@ fun MeasurementApi.createTemperatureMeasurementBatch(
 ): Mono<MeasurementCollection> {
     log.info("Create batch of $numerOfMeasurements temparture measurements for device $device ")
     return createMany(
-        Mono.just(
-            MeasurementCollection(
-                measurements = (1..numerOfMeasurements).map { value ->
-                    Measurement(source = device, type = "measurement").set(
-                        "c8y_Temperature",
-                        mapOf("T" to mapOf("value" to value, "unit" to "C"))
-                    )
-                }
-            )
+        MeasurementCollection(
+            measurements = (1..numerOfMeasurements).map { value ->
+                Measurement(source = device, type = "measurement").set(
+                    "c8y_Temperature",
+                    mapOf("T" to mapOf("value" to value, "unit" to "C"))
+                )
+            }
         )
     )
 }

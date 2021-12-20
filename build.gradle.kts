@@ -1,10 +1,10 @@
 plugins {
-    kotlin("jvm") version "1.4.10" apply false
+    kotlin("jvm") version "1.5.31" apply false
 }
 
 tasks.named<Wrapper>("wrapper") {
     distributionType = Wrapper.DistributionType.ALL
-    gradleVersion = "6.6.1"
+    gradleVersion = "7.2"
 }
 
 group = "io.c8y"

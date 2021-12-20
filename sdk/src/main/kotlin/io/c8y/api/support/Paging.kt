@@ -1,8 +1,10 @@
 package io.c8y.api.support
 
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import java.lang.RuntimeException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
@@ -30,7 +32,7 @@ class Paging(private val client: WebClient, private val path: String) {
             }
 
 
-        fun getPage(index: Int, pageSize: Int = 1000): Mono<C> {
+        fun getPage(index: Int, pageSize: Int = 2000): Mono<C> {
             return client.get().uri { uri ->
                 uri.path(path).apply {
                     params
@@ -53,7 +55,7 @@ class Paging(private val client: WebClient, private val path: String) {
             }
 
                 .retrieve()
-
+                .handleRestError()
                 .bodyToMono(collectionType)
 
 

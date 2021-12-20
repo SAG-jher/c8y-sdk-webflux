@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     kotlin("jvm") apply(true)
 }
@@ -15,7 +17,6 @@ dependencies {
     api("com.hivemq:hivemq-mqtt-client:1+")
     api("com.hivemq:hivemq-mqtt-client-reactor:1+")
     api("io.netty:netty-transport-native-epoll:4.1.49.Final:linux-x86_64")
-    api("org.java-websocket:Java-WebSocket:1.4.0")
 }
 
 tasks {

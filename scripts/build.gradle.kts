@@ -8,6 +8,7 @@ dependencies {
     api(kotlin("stdlib"))
     api(kotlin("reflect"))
     api(project(":sdk"))
+    implementation("org.yaml:snakeyaml:1+")
 
 }
 

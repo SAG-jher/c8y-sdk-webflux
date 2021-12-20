@@ -15,3 +15,9 @@ fun loggerFor(clazz: Class<*>): Logger = LoggerFactory.getLogger(clazz)
 
 
 fun loggerFor(id: String): Logger = LoggerFactory.getLogger(id)
+
+inline fun  Logger.info (crossinline body:()->String){
+    if(this.isInfoEnabled){
+        this.info(body())
+    }
+}

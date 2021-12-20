@@ -9,7 +9,8 @@
     </appender>
 
 
-
+    <logger name="io.c8y.api.PlatformApi" level="DEBUG" />
+    <logger name="io.c8y.api.inventory.InventoryApi" level="DEBUG" />
     <logger name="io.c8y" level="DEBUG" />
 
     <root level="INFO">

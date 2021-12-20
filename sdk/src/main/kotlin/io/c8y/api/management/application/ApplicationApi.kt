@@ -2,16 +2,15 @@ package io.c8y.api.management.application
 
 import io.c8y.api.support.Paging
 import io.c8y.api.support.handleRestError
-import org.springframework.core.io.InputStreamResource
+import org.reactivestreams.Publisher
+import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.web.reactive.function.BodyInserters
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.WebClientResponseException
 import org.springframework.web.util.UriBuilderFactory
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import java.io.InputStream
 
 class ApplicationApi(
     private val baseUrl: UriBuilderFactory,
@@ -33,7 +32,7 @@ class ApplicationApi(
     }
 
     fun currentApplication(): CurrentApplicationApi {
-        return CurrentApplicationApi(baseUrl, client)
+        return CurrentApplicationApi(client)
     }
 
     fun bootstrapUser(applicationId: String): Mono<ApplicationUser> {
@@ -56,25 +55,23 @@ class ApplicationApi(
 
     }
 
-    fun create(application: Mono<Application>): Mono<Application> {
+    fun create(application: Application): Mono<Application> {
         return client.post()
             .uri { uri -> uri.path("application/applications").build() }
             .contentType(MediaType.APPLICATION_JSON)
-            .body(application, Application::class.java)
+            .body(Mono.just(application), Application::class.java)
             .accept(MediaType.APPLICATION_JSON)
             .retrieve()
             .handleRestError()
             .bodyToMono(Application::class.java)
-            .onErrorMap {
-                val ex = it as WebClientResponseException
-                RuntimeException("Failure ${ex.message} ${ex.responseBodyAsString}", ex)
-            }
+
     }
 
-    fun upload(id: String?, just: Mono<InputStream>): Mono<Void> {
+
+    fun upload( id: String, input: Publisher<DataBuffer>): Mono<Void> {
         val bodyBuilder = MultipartBodyBuilder()
 
-        bodyBuilder.asyncPart("file", just.map { InputStreamResource(it) }, InputStreamResource::class.java)
+        bodyBuilder.asyncPart("file", input, DataBuffer::class.java)
 
         return client.post()
             .uri { uri -> uri.path("application/applications/{id}/binaries").build(id) }
@@ -88,7 +85,6 @@ class ApplicationApi(
             .retrieve()
             .handleRestError()
             .bodyToMono(Void::class.java)
-
     }
 
     fun delete(applicationId: String): Mono<Void> {

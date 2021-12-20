@@ -1,6 +1,6 @@
 package io.c8y.scripts
 
-import io.c8y.api.management.realtime.RealtimeWebsocket
+import io.c8y.api.management.realtime.RealtimeWebsocketFlux
 import io.c8y.config.Platform
 import reactor.core.publisher.Mono
 
@@ -10,7 +10,7 @@ fun main() {
 
     val current = Platform["emea"]
 
-    val realtime = RealtimeWebsocket(current, "cep/realtime")
+    val realtime = RealtimeWebsocketFlux(current, "cep/realtime")
     realtime
             .handshake()
             .doFinally {

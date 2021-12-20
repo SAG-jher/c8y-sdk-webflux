@@ -1,8 +1,8 @@
 package io.c8y.config
 
 import io.c8y.api.BasicCredentials
+import io.c8y.api.Config
 import io.c8y.api.PlatformApi
-import org.slf4j.LoggerFactory
 
 object Platform {
 
@@ -21,6 +21,14 @@ object Platform {
         require("credentials" in env) { "Can't find credentials for environment with id $id" }
         val credentials = env["credentials"] as Map<String, Any>
         return PlatformApi(
+            config = object : Config {
+                override fun <T> get(key: String): T {
+                    return (env[key] as T)!!
+                }
+                override fun <T> getOrDefault(key: String,orDefault:T ): T {
+                    return (env[key] as T)?:orDefault
+                }
+            },
             credentials = BasicCredentials(
                 username = credentials["username"] as String?
                     ?: error("Can't find username in credentails for environment with id $id"),
