@@ -1,22 +1,30 @@
 package io.c8y.scripts
 
+import io.c8y.api.inventory.ensureDevice
 import io.c8y.api.inventory.measurement.Measurement
 import io.c8y.api.inventory.measurement.MeasurementCollection
 import io.c8y.api.management.tenant.ensureTenant
 import io.c8y.config.Platform
 import io.c8y.scripts.support.log
-import org.apache.commons.lang.RandomStringUtils
+import org.apache.commons.lang3.RandomStringUtils
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import java.time.OffsetDateTime
 
 fun main() {
-    val current = Platform["staging-latest"]
+    val current = Platform["local"]
     val api = current.rest().tenant()
         .ensureTenant("jaro-0")
         .map { current.forTenant(it) }
         .block()
 
-    val valuesPerFragment = 1
+    Flux.range(0,10)
+        .concatMap {
+            api.rest().inventory().ensureDevice("c8y_measurement_test_$it")
+        }
+        .blockLast()
+
+    val valuesPerFragment = 10
 
     api.rest().inventory().list()
         .concatMap { device ->
@@ -24,16 +32,16 @@ fun main() {
             api.rest().measurement().list("source" to device.id!!).count()
                 .flatMap { count ->
                     log.info("count done for {} items {}",device.id,count)
-                    if (count > 1000) {
+                    if (count > 100000) {
                         Mono.just(device)
                     } else {
 
                         Mono.defer {
-                            Flux.range(0,1000).map {
+                            Flux.range(0,5000).map {measurement->
                                 val temp = (0..valuesPerFragment).map {
                                     "T" + it to mapOf("value" to it, "unit" to RandomStringUtils.randomAlphabetic(1000))
                                 }.toMap()
-                                Measurement(source = device, type = "measurement").set(
+                                Measurement(source = device, type = "measurement",time = OffsetDateTime.now().minusMonths(1).minusMinutes(measurement.toLong())).set(
                                     "c8y_Temperature", temp
                                 )
                             }.collectList()
@@ -49,16 +57,7 @@ fun main() {
                 }
 
         }
-        .buffer(1000)
-        .flatMapIterable { it }
-        .flatMap {
-            log.info("get for {}",it.id)
-            api.rest().measurement().list("source" to it.id!!)
-        }
-        .buffer(2000)
-        .doOnNext {
-            log.info("${it.size} measurements read")
-        }
+
         .blockLast()
 
 }

@@ -86,20 +86,7 @@ class TenantApi(
                 ApplicationReference::class.java
             )
             .retrieve()
-            .onStatus(HttpStatus::is4xxClientError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
-            .onStatus(HttpStatus::is5xxServerError) { r ->
-                r.bodyToMono(String::class.java)
-                    .map {
-                        RuntimeException(it)
-                    }
-
-            }
+            .handleRestError()
             .bodyToMono(Void::class.java)
     }
 

@@ -2,6 +2,8 @@ package io.c8y.api.inventory.devicecontrol
 
 import com.fasterxml.jackson.annotation.JsonFormat
 import io.c8y.api.inventory.ManagedObject
+import io.c8y.api.inventory.alarm.Alarm
+import io.c8y.api.inventory.alarm.AlarmCollection
 import io.c8y.api.support.*
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.client.WebClient
@@ -50,6 +52,10 @@ class DeviceControlApi(private val client: WebClient) {
     fun list(vararg params: Pair<String, Any>): Flux<Operation> {
         return Paging(client, path = "devicecontrol/operations")
             .list<Operation, OperationCollection>(params)
+    }
+    fun count(vararg params: Pair<String, Any>): Mono<Long?> {
+        return Paging(client, path = "devicecontrol/operations")
+            .count<Operation, OperationCollection>(params)
     }
 
     fun bulk():BulkOperationApi{

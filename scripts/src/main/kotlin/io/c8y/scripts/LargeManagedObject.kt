@@ -4,8 +4,8 @@ import com.google.common.base.Stopwatch
 import io.c8y.api.inventory.ensureDevice
 import io.c8y.api.management.tenant.ensureTenant
 import io.c8y.config.Platform
-import org.apache.commons.lang.RandomStringUtils
-import org.apache.commons.lang.math.RandomUtils
+import org.apache.commons.lang3.RandomStringUtils
+import org.apache.commons.lang3.RandomUtils
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 
@@ -29,7 +29,7 @@ fun main() {
         }.flatMap { mo->
             inventory.update(
                 mo.id!!,
-                (0..2).map{RandomUtils.nextInt(2500)}.map { prop ->
+                (0..2).map{RandomUtils.nextInt(0,2500)}.map { prop ->
                     "property $prop" to randomPropertyValue()
                 }.toMap()
             ).onErrorResume {

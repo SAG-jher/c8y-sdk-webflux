@@ -88,7 +88,7 @@ class RealtimeWebsocketFlux(val c8y: PlatformApi, val path: String) : Realtime {
 
         return Mono.create<Void> { handshakeSink ->
 
-            c8y.websocket().connect({ uri ->
+            c8y.rest().websocket().connect({ uri ->
                 uri.path(path).build()
             }, object : WebSocketHandler {
 

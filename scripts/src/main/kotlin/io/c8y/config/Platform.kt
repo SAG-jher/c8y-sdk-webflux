@@ -25,15 +25,17 @@ object Platform {
                 override fun <T> get(key: String): T {
                     return (env[key] as T)!!
                 }
-                override fun <T> getOrDefault(key: String,orDefault:T ): T {
-                    return (env[key] as T)?:orDefault
+
+                override fun <T> getOrDefault(key: String, orDefault: T): T {
+                    return (env[key] as T) ?: orDefault
                 }
             },
             credentials = BasicCredentials(
                 username = credentials["username"] as String?
                     ?: error("Can't find username in credentails for environment with id $id"),
                 password = credentials["password"] as String?
-                    ?: error("Can't find password in credentails for environment with id $id")
+                    ?: error("Can't find password in credentails for environment with id $id"),
+                token = credentials["token"] as String?
             ),
             baseUrl = env["baseUrl"] as String?
                 ?: error("Can't find baseUrl for environment with id $id"),

@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 fun main() {
-    val platformApi = Platform["vv-test"]
+    val platformApi = Platform["local"]
     val mqttTest = platformApi.rest().tenant().ensureTenant(id = "jaro-mqtt").block()!!
     val connected = ConcurrentHashMap<String,Boolean>()
     val api = platformApi.forTenant(mqttTest);

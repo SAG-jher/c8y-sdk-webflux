@@ -9,22 +9,23 @@ import io.c8y.api.management.tenant.Tenant
 import io.c8y.api.management.tenant.domainForTenant
 import io.c8y.api.support.Dynamic
 import io.c8y.api.support.loggerFor
+import io.netty.channel.ChannelOption
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.client.reactive.ClientHttpConnector
 import org.springframework.http.client.reactive.ReactorClientHttpConnector
-import org.springframework.web.reactive.function.client.ExchangeFilterFunctions
-import org.springframework.web.reactive.function.client.ExchangeStrategies
-import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.*
 import org.springframework.web.reactive.socket.WebSocketHandler
 import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient
 import org.springframework.web.util.DefaultUriBuilderFactory
 import org.springframework.web.util.UriBuilder
 import reactor.core.publisher.Mono
 import reactor.netty.http.client.HttpClient
+import reactor.netty.resources.ConnectionProvider
 import java.net.URI
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 
@@ -40,7 +41,8 @@ interface Credentials {
 
 data class BasicCredentials(
     val username: String,
-    val password: String
+    val password: String,
+    val token: String? = null
 ) : Credentials {
 
     override val tenant: String?
@@ -52,12 +54,16 @@ data class BasicCredentials(
             }) as String?
         }
 
+    fun hasToken(): Boolean {
+        return token != null
+    }
+
     fun encode(): String {
         return BaseEncoding.base64().encode("$username:$password".toByteArray())
     }
 }
 
-private val wsClient = ReactorNettyWebSocketClient()
+internal val wsClient = ReactorNettyWebSocketClient()
 
 
 private val sslContext = SslContextBuilder
@@ -65,7 +71,29 @@ private val sslContext = SslContextBuilder
     .trustManager(InsecureTrustManagerFactory.INSTANCE)
     .build();
 private val httpConnector: ClientHttpConnector =
-    ReactorClientHttpConnector(HttpClient.create().secure { t -> t.sslContext(sslContext) }.compress(true))
+    ReactorClientHttpConnector(HttpClient.create(
+        ConnectionProvider.builder("platform")
+            .evictInBackground(Duration.ofMinutes(1))
+            .fifo()
+            .maxConnections(1000)
+            .pendingAcquireMaxCount(200)
+            .pendingAcquireTimeout(Duration.ofSeconds(30))
+            .maxLifeTime(Duration.ofMinutes(5))
+            .build()
+
+    )
+        .secure { t ->
+            t.sslContext(sslContext)
+                .handshakeTimeout(Duration.ofMinutes(2))
+                .closeNotifyFlushTimeout(Duration.ofSeconds(10))
+                .closeNotifyReadTimeout(Duration.ofSeconds(10))
+        }
+
+        .compress(true)
+        .responseTimeout(Duration.ofMinutes(30))
+        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 120000)
+        .option(ChannelOption.SO_KEEPALIVE, true)
+    )
 
 private val log = loggerFor<PlatformApi>()
 
@@ -79,7 +107,15 @@ private val restClient = WebClient.builder()
             }
             .build()
     )
-    .filter { req, next ->
+
+    .filter(logging())
+    .clientConnector(httpConnector)
+    .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+
+    .build();
+
+private fun logging(): ExchangeFilterFunction  {
+    return ExchangeFilterFunction{ req:ClientRequest, next: ExchangeFunction ->
         val stopwatch = Stopwatch.createStarted()
         next.exchange(req)
             .doOnEach { signal ->
@@ -99,10 +135,7 @@ private val restClient = WebClient.builder()
                 }
             }
     }
-    .clientConnector(httpConnector)
-    .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-
-    .build();
+}
 
 
 class PlatformApi(
@@ -131,7 +164,14 @@ class PlatformApi(
 
     fun forTenant(
         tenant: Tenant,
-        baseUrl: String = this.baseUrl,
+        baseUrl: String = tenant.let {
+            if (tenantDomainSupport) {
+                tenant.domain ?: this.baseUrl
+            } else {
+                this.baseUrl
+            }
+        },
+
         useHttps: Boolean = config.getOrDefault("useHttps", false)
     ): PlatformApi {
         val currentBase = url.build()
@@ -165,7 +205,7 @@ class PlatformApi(
     fun mqtt3(
         clientId: String,
         credentials: Credentials = this.credentials,
-        port: Int = 8883,
+        port: Int = this.config.getOrDefault("mqttPort", "1883").toInt(),
         configure: (Mqtt3ClientBuilder) -> Unit = {}
     ): Mqtt3ReactorClient {
 
@@ -198,6 +238,7 @@ class PlatformApi(
                                 .password(credentials.password.toByteArray())
 
                         }
+
                         else -> throw IllegalStateException("unsupported credentials " + credentials)
                     }
                 }
@@ -208,68 +249,13 @@ class PlatformApi(
 
     }
 
-    fun websocket(): WebSocketConnect {
-        val uriBuilder = DefaultUriBuilderFactory(baseUrl)
-        return object : WebSocketConnect {
-            override fun connect(uri: (UriBuilder) -> URI, handler: WebSocketHandler): Mono<Void> {
-                return wsClient.execute(
-                    uri(uriBuilder.builder()),
-                    HttpHeaders().run {
-                        when (credentials) {
-                            is BasicCredentials -> {
-                                setBasicAuth(credentials.username, credentials.password);
-                                this
-                            }
-                            else -> {
-                                throw  IllegalStateException("is not supported $credentials")
-                            }
-                        }
-                    }, handler
-                )
-            }
-        }
-    }
+
 
     fun rest(): RestApi {
-
-        val uriBuilder = DefaultUriBuilderFactory(baseUrl)
-
-        return RestApi(
-            baseUrl = uriBuilder,
-            client = restClient.mutate()
-                .baseUrl(baseUrl).run {
-                    when (credentials) {
-                        is BasicCredentials -> filter(
-                            ExchangeFilterFunctions.basicAuthentication(
-                                credentials.username,
-                                credentials.password
-                            )
-                        )
-                        else -> throw IllegalStateException("unsupported credentials " + credentials)
-                    }
-
-                }
-                .build(),
-
-            websocket = object : WebSocketConnect {
-                override fun connect(uri: (UriBuilder) -> URI, handler: WebSocketHandler): Mono<Void> {
-
-                    return wsClient.execute(
-                        uri(uriBuilder.builder()),
-                        HttpHeaders().run {
-                            when (credentials) {
-                                is BasicCredentials -> {
-                                    setBasicAuth(credentials.username, credentials.password);
-                                    this
-                                }
-                                else -> {
-                                    throw  IllegalStateException("is not supported $credentials")
-                                }
-                            }
-                        }, handler
-                    )
-                }
-            },
+        return RestApis.create(
+            baseUrl = baseUrl,
+            credentials = credentials,
+            client = restClient,
             tenant = tenant,
             tenantDomainSupport = tenantDomainSupport
         )

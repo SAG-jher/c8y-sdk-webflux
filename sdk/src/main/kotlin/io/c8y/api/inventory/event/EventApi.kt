@@ -45,6 +45,10 @@ class EventApi(private val client: WebClient) {
         return Paging(client, path = "event/events")
             .list<Event, EventCollection>(params)
     }
+    fun count(vararg params: Pair<String, Any>): Mono<Long?> {
+        return Paging(client, path = "event/events")
+            .count<Event, EventCollection>(params)
+    }
 }
 
 

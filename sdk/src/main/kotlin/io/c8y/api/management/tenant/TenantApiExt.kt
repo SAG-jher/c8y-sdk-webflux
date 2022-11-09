@@ -5,11 +5,10 @@ import io.c8y.api.support.loggerFor
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 
-fun TenantApi.tenants(numberOfTenants: Int, create: Boolean = false, batchSize: Int = 5): Flux<Tenant> {
+fun TenantApi.tenants(numberOfTenants: Int, create: Boolean = false, batchSize: Int = 1,prefix:String = "jaro"): Flux<Tenant> {
     return Flux.range(0, numberOfTenants)
-        .map { "jaro-$it" }
+        .map { "$prefix-$it" }
         .buffer(batchSize)
-
         .concatMap { ids ->
             Flux.fromIterable(ids).flatMap { id ->
                 get(id).onErrorResume {
@@ -23,6 +22,9 @@ fun TenantApi.tenants(numberOfTenants: Int, create: Boolean = false, batchSize: 
         }
 }
 private val log = loggerFor<TenantApi>()
+
+
+
 fun TenantApi.ensureTenant(id: String): Mono<Tenant> {
     return get(id).onErrorResume {
         create(

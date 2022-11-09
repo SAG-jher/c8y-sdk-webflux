@@ -1,14 +1,10 @@
 package io.c8y.api.support
 
+import com.google.common.net.UrlEscapers
 import org.springframework.web.reactive.function.client.WebClient
-import org.springframework.web.reactive.function.client.WebClientResponseException
+import org.springframework.web.util.UriBuilder
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import java.lang.RuntimeException
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAccessor
 
 class Paging(private val client: WebClient, private val path: String) {
@@ -19,47 +15,46 @@ class Paging(private val client: WebClient, private val path: String) {
         return doList(params, T::class.java)
     }
 
-    fun <E, C : Pageable<E>> doList(params: Array<out Pair<String, Any>>, collectionType: Class<C>): Flux<E> {
-        fun encodeDateTime(dateTime: TemporalAccessor) =
-            when (dateTime) {
-                is ZonedDateTime -> DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
-                    LocalDateTime.ofInstant(
-                        dateTime.toInstant(),
-                        ZoneOffset.UTC
-                    ).atZone(ZoneOffset.UTC)
-                )
-                else -> DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(dateTime)
-            }
+    fun <E, C : Pageable<E>> getPage(
+        index: Int,
+        pageSize: Int = 2000,
+        collectionType: Class<C>,
+        vararg params: Pair<String, Any>
+    ): Mono<C> {
 
-
-        fun getPage(index: Int, pageSize: Int = 2000): Mono<C> {
-            return client.get().uri { uri ->
-                uri.path(path).apply {
-                    params
-                        .forEach { query ->
-                            queryParam(
-                                query.first, when (query.second) {
-                                    is TemporalAccessor -> encodeDateTime(query.second as TemporalAccessor)
-                                    else -> query.second
-                                }
-                            )
-
+        return client.get().uri { uri ->
+            uri.path(path).apply<UriBuilder> {
+                params.forEach { query ->
+                    when(query.first) {
+                        "q","query"->{
+                            this.queryParam(query.first, query.second)
                         }
-                }
-                    .apply {
-                        if (!params.any { it.first == "pageSize" }) {
-                            queryParam("pageSize", pageSize)
-                        }
+                        else-> this.queryParam(query.first, "{${query.first}}")
                     }
-                    .queryParam("currentPage", index).build()
+                }
             }
-
-                .retrieve()
-                .handleRestError()
-                .bodyToMono(collectionType)
-
-
+                .apply<UriBuilder> {
+                    if (!params.any { it.first == "pageSize" }) {
+                        this.queryParam("pageSize", pageSize)
+                    }
+                }
+                .queryParam("currentPage", index)
+                .build(mapOf(*params).mapValues<String?, Any, Any?> {
+                    when (it.value) {
+                        is TemporalAccessor -> (it.value as TemporalAccessor).asQueryParam()
+                        else -> it.value
+                    }
+                })
         }
+
+            .retrieve()
+            .handleRestError()
+            .bodyToMono(collectionType)
+
+
+    }
+
+    fun <E, C : Pageable<E>> doList(params: Array<out Pair<String, Any>>, collectionType: Class<C>): Flux<E> {
 
 
         return Flux.create { emitter ->
@@ -71,7 +66,7 @@ class Paging(private val client: WebClient, private val path: String) {
             fun emit(retry: Int = 0) {
                 if (!emitter.isCancelled) {
                     isFetching = true;
-                    getPage(currentPage)
+                    getPage(index = currentPage, collectionType = collectionType, params = params)
                         .doOnSuccess {
                             if (it.any() && leftToEmit > 0) {
                                 it.forEach { t ->
@@ -87,7 +82,7 @@ class Paging(private val client: WebClient, private val path: String) {
                                 if (!it.any()) {
                                     emitter.complete()
                                 }
-                                isFetching=false;
+                                isFetching = false;
                             }
                         }
                         .doOnError {
@@ -103,11 +98,18 @@ class Paging(private val client: WebClient, private val path: String) {
 
             emitter.onRequest { reqested ->
                 leftToEmit += reqested
-                if(!isFetching) {
+                if (!isFetching) {
                     emit()
                 }
             }
 
         }
+    }
+
+    inline fun <E, reified T : Pageable<E>> count(params: Array<out Pair<String, Any>>): Mono<Long?> {
+        return getPage(1, pageSize = 1, T::class.java, *params, "withTotalPages" to "true")
+            .map {
+                it.statistics?.totalElements()
+            }
     }
 }

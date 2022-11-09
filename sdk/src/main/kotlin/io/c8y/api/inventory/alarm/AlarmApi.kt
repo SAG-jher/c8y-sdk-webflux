@@ -11,7 +11,7 @@ import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
-
+data class Downtime(val downtimeDuration:Long, val deviceCount:Long)
 class AlarmApi(val client: WebClient) {
 
     fun create(alarm: Alarm): Mono<Alarm> {
@@ -47,6 +47,22 @@ class AlarmApi(val client: WebClient) {
     fun list(vararg params: Pair<String, Any>): Flux<Alarm> {
         return Paging(client, path = "alarm/alarms")
             .list<Alarm, AlarmCollection>(params)
+    }
+
+    fun downtime(from: ZonedDateTime, to: ZonedDateTime):Mono<Downtime>{
+        return client.get().uri {
+            it.path("alarm/alarms/reports/downtimeDuration/aggregation")
+                .queryParam("dateFrom",from.asQueryParam())
+                .queryParam("dateTo",to.asQueryParam())
+                .build()
+        }.accept(MediaType.APPLICATION_JSON)
+            .retrieve()
+            .bodyToMono(Downtime::class.java)
+    }
+
+    fun count(vararg params: Pair<String, Any>): Mono<Long?> {
+        return Paging(client, path = "alarm/alarms")
+            .count<Alarm, AlarmCollection>(params)
     }
 
 }

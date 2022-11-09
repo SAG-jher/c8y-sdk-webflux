@@ -1,25 +1,32 @@
 package io.c8y.scripts
 
-import io.c8y.api.management.tenant.tenants
 import io.c8y.config.Platform
-import io.c8y.scripts.support.log
 import org.springframework.web.reactive.function.client.WebClientResponseException
-import reactor.core.publisher.Mono
 
 fun main() {
-    val platform = Platform["local"]
+    val platform = Platform["staging-latest"]
     val rest = platform.rest()
 
     val tenantApi = rest.tenant()
 
-    val app  = rest.application().list("name" to "echo-agent-server").take(1).blockFirst()
 
     try {
+        val app = rest.application().list().collectList().block()
+        app.filter {
+            it.name!!.contains("actility")
+        }.forEach {
+            println("${it.name} - ${it.owner?.tenant?.id}")
+        }
+        val options = rest.tenant().options().list().collectList().block()
+        options.filter { it.key.contains("actility") }.forEach {
+            println("${it.category}.${it.key} - ${it.value}")
+        }
 
-        val result = tenantApi.tenants(20,true)
-            .concatMap {
-                log.info("Unsubscribe tenant {} from {}",it.id,app.id)
-                tenantApi.unsubscribe(it.id!!,app.id!!).onErrorResume { Mono.empty() }
+
+//        val result = tenantApi.tenants(20,true)
+//            .concatMap {
+//                log.info("Unsubscribe tenant {} from {}",it.id,app.id)
+//                tenantApi.unsubscribe(it.id!!,app.id!!).onErrorResume { Mono.empty() }
 
 //                    .flatMap { tenant ->
 //                        Mono.just(tenant)
@@ -171,7 +178,7 @@ fun main() {
 //                                })
 //                            .map { it }
 //                    }
-            }.collectList().block()
+//            }.collectList().block()
 //            .concatMap {
 //                Flux.fromIterable(it)
 //                    .map { it to Platform.from(it) }
@@ -201,7 +208,7 @@ fun main() {
 //            }
 
 
-        println(result)
+//        println(result)
     } catch (ex: WebClientResponseException) {
         println("${ex.statusCode} ${ex.request.method} ${ex.request.uri} ${ex.responseBodyAsString}")
     }
